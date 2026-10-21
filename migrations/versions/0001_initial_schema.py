@@ -20,14 +20,23 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-direction_enum = postgresql.ENUM("exit_by", "entry_by", name="direction")
-vehicle_type_enum = postgresql.ENUM("car", "truck", "bus", name="vehicletype")
+# create_type=False: types are created once below. Passing the same ENUM object
+# into create_table() would emit a second CREATE TYPE and crash the deploy
+# with DuplicateObjectError ("type direction already exists").
+direction_enum = postgresql.ENUM("exit_by", "entry_by", name="direction", create_type=False)
+vehicle_type_enum = postgresql.ENUM("car", "truck", "bus", name="vehicletype", create_type=False)
 payment_status_enum = postgresql.ENUM(
-    "invoice_created", "succeeded", "refunded", "failed", name="paymentstatus"
+    "invoice_created", "succeeded", "refunded", "failed", name="paymentstatus", create_type=False
 )
 subscription_status_enum = postgresql.ENUM(
-    "pending_payment", "active", "fulfilled", "expired", "cancelled", "error",
+    "pending_payment",
+    "active",
+    "fulfilled",
+    "expired",
+    "cancelled",
+    "error",
     name="subscriptionstatus",
+    create_type=False,
 )
 event_type_enum = postgresql.ENUM(
     "payment_invoice_created",
@@ -44,16 +53,51 @@ event_type_enum = postgresql.ENUM(
     "notification_sent",
     "notification_failed",
     name="eventtype",
+    create_type=False,
 )
 
 
+def _create_enum(name: str, labels: tuple[str, ...]) -> None:
+    values = ", ".join(f"'{label}'" for label in labels)
+    op.execute(
+        sa.text(
+            f"""
+            DO $$ BEGIN
+                CREATE TYPE {name} AS ENUM ({values});
+            EXCEPTION
+                WHEN duplicate_object THEN NULL;
+            END $$;
+            """
+        )
+    )
+
+
 def upgrade() -> None:
-    bind = op.get_bind()
-    direction_enum.create(bind, checkfirst=True)
-    vehicle_type_enum.create(bind, checkfirst=True)
-    payment_status_enum.create(bind, checkfirst=True)
-    subscription_status_enum.create(bind, checkfirst=True)
-    event_type_enum.create(bind, checkfirst=True)
+    _create_enum("direction", ("exit_by", "entry_by"))
+    _create_enum("vehicletype", ("car", "truck", "bus"))
+    _create_enum("paymentstatus", ("invoice_created", "succeeded", "refunded", "failed"))
+    _create_enum(
+        "subscriptionstatus",
+        ("pending_payment", "active", "fulfilled", "expired", "cancelled", "error"),
+    )
+    _create_enum(
+        "eventtype",
+        (
+            "payment_invoice_created",
+            "payment_succeeded",
+            "payment_failed",
+            "payment_refunded",
+            "subscription_created",
+            "subscription_cancelled",
+            "snapshot_fetch_ok",
+            "snapshot_fetch_parse_error",
+            "snapshot_fetch_http_error",
+            "rule_check",
+            "window_state",
+            "notification_sent",
+            "notification_failed",
+        ),
+    )
 
     op.create_table(
         "crossing_points",
