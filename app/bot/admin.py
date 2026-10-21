@@ -98,14 +98,19 @@ async def cmd_force_fetch(message: Message, session: AsyncSession, bot: Bot) -> 
     from app.domain.subscription_processor import process_subscriptions_for_snapshot
 
     await message.answer("Запускаю внеочередной опрос ГПК...")
-    snapshot = await fetch_and_store_snapshot(session)
+    try:
+        snapshot = await fetch_and_store_snapshot(session)
 
-    async def _send(telegram_id: int, subscription, result, snap):
-        return await send_queue_notification(bot, telegram_id, subscription, result, snap)
+        async def _send(telegram_id: int, subscription, result, snapshot):
+            return await send_queue_notification(bot, telegram_id, subscription, result, snapshot)
 
-    await process_subscriptions_for_snapshot(session, snapshot, _send)
+        await process_subscriptions_for_snapshot(session, snapshot, _send)
+    except Exception as exc:
+        await message.answer(f"Опрос не завершился: {exc}")
+        raise
 
     await message.answer(
         f"Готово. Снапшот #{snapshot.id}, parse_ok={snapshot.parse_ok}, "
-        f"source_time={snapshot.source_time_raw}"
+        f"source_time={snapshot.source_time_raw}. "
+        "Если условие наблюдения выполнилось, сообщение ушло в этот же чат."
     )

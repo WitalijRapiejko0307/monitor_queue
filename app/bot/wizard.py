@@ -273,6 +273,13 @@ async def _activate_subscription_without_payment(
     code path below is kept intact so re-enabling payments later (setting
     PAYMENT_PROVIDER_TOKEN) requires no changes here.
     """
+    if "vehicle_type" not in data or "point_id" not in data or "window_end" not in data:
+        await callback.message.answer(
+            "Шаги наблюдения сбросились. Отправьте /watch и пройдите выбор заново."
+        )
+        await state.clear()
+        return
+
     vehicle_type = VehicleType(data["vehicle_type"])
     user = await _get_or_create_user(session, callback.from_user.id)
 
