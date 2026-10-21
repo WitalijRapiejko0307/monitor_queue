@@ -30,6 +30,20 @@ class Settings(BaseSettings):
     price_truck_minor: int = Field(default=900, alias="PRICE_TRUCK_MINOR")
 
     @property
+    def normalized_database_url(self) -> str:
+        """Railway's Postgres plugin exposes DATABASE_URL as postgres:// or
+        postgresql://; SQLAlchemy's async engine needs the asyncpg driver scheme.
+        Rewriting here keeps the Railway variable a plain reference
+        (${{Postgres.DATABASE_URL}}) instead of requiring manual edits.
+        """
+        url = self.database_url
+        if url.startswith("postgres://"):
+            return "postgresql+asyncpg://" + url[len("postgres://") :]
+        if url.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + url[len("postgresql://") :]
+        return url
+
+    @property
     def admin_telegram_ids(self) -> set[int]:
         ids: set[int] = set()
         for part in self.admin_telegram_ids_raw.split(","):
