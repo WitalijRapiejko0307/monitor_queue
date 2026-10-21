@@ -29,7 +29,7 @@ def build_notification_text(
         f"Направление: {direction_text}\n"
         f"Тип транспорта: {vehicle_text}\n"
         f"Машин в очереди: {result.numeric_value} (порог был {subscription.threshold})\n"
-        f"Время среза ГПК: {snapshot.source_time_raw or 'неизвестно'}"
+        f"Время проверки: {snapshot.source_time_raw or 'неизвестно'}"
         f"{electronic_note}"
     )
 
@@ -40,7 +40,7 @@ def build_window_expired_text(subscription: Subscription) -> str:
         subscription.vehicle_type.value
     ]
     return (
-        f"По данным ГПК очередь не собралась до указанного времени выезда.\n"
+        f"По данным зоны ожидания очередь не собралась до указанного времени выезда.\n"
         f"Направление: {direction_text}, тип: {vehicle_text}, порог: {subscription.threshold}.\n"
         f"Наблюдение завершено, услуга оказана."
     )

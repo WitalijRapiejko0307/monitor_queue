@@ -1,7 +1,6 @@
-"""Scheduled job: fetch GPK snapshot, then evaluate all active subscriptions.
+"""Scheduled job: read the waiting-zone API, then evaluate active subscriptions.
 
-Runs every 2 hours (even hours), `settings.fetch_offset_minutes` after the hour,
-matching the GPK publication cadence (docs/implementation-plan.md §2).
+Runs every settings.fetch_interval_minutes (default 5).
 """
 
 from __future__ import annotations
@@ -42,8 +41,7 @@ def create_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(
         run_fetch_and_evaluate,
         trigger=CronTrigger(
-            hour="0,2,4,6,8,10,12,14,16,18,20,22",
-            minute=settings.fetch_offset_minutes,
+            minute=f"*/{settings.fetch_interval_minutes}",
             timezone=settings.timezone,
         ),
         kwargs={"bot": bot},

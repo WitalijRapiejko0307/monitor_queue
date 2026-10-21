@@ -19,10 +19,11 @@ class Settings(BaseSettings):
 
     timezone: str = Field(default="Europe/Minsk", alias="TIMEZONE")
 
-    gpk_source_url: str = Field(
-        default="https://gpk.gov.by/situation-at-the-border/", alias="GPK_SOURCE_URL"
+    border_api_url: str = Field(
+        default="https://belarusborder.by/info/checkpoint?token=bts47d5f-6420-4f74-8f78-42e8e4370cc4",
+        alias="BORDER_API_URL",
     )
-    fetch_offset_minutes: int = Field(default=10, alias="FETCH_OFFSET_MINUTES")
+    fetch_interval_minutes: int = Field(default=5, alias="FETCH_INTERVAL_MINUTES")
 
     payment_provider_token: str = Field(default="", alias="PAYMENT_PROVIDER_TOKEN")
     payment_currency: str = Field(default="BYN", alias="PAYMENT_CURRENCY")

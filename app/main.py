@@ -38,7 +38,10 @@ async def main() -> None:
 
     scheduler = create_scheduler(bot)
     scheduler.start()
-    logger.info("Scheduler started: fetch_and_evaluate every 2h at :%02d", settings.fetch_offset_minutes)
+    logger.info(
+        "Scheduler started: fetch_and_evaluate every %s minutes",
+        settings.fetch_interval_minutes,
+    )
 
     try:
         await bot.delete_webhook(drop_pending_updates=True)

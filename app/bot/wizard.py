@@ -316,7 +316,7 @@ async def _activate_subscription_without_payment(
     await callback.message.edit_text(
         f"Наблюдение запущено.\n"
         f"Слежу за очередью до {subscription.window_end.strftime('%d.%m %H:%M')}.\n"
-        f"Проверка по графику ГПК, раз в 2 часа. Напишу, как только машин станет "
+        f"Проверка каждые 5 минут. Напишу, как только машин станет "
         f"не меньше {subscription.threshold}."
     )
 
@@ -438,5 +438,5 @@ async def on_successful_payment(message: Message, state: FSMContext, session: As
     await message.answer(
         f"Оплата получена. Слежу за очередью до "
         f"{subscription.window_end.strftime('%d.%m %H:%M')}.\n"
-        f"Проверка по графику ГПК, раз в 2 часа. Напишу, как только условие выполнится."
+        f"Проверка каждые 5 минут. Напишу, как только условие выполнится."
     )

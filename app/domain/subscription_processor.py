@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    EventLog,
     EventType,
     QueueSnapshot,
     QueueValue,
@@ -56,13 +57,19 @@ async def process_subscriptions_for_snapshot(
             await session.flush()
             continue
 
-        await log_event(
+        if not await _same_as_last_event(
             session,
+            subscription.id,
             EventType.WINDOW_STATE,
-            subscription_id=subscription.id,
-            payload={"state": "window_open", "checked_at": now.isoformat()},
-            commit=False,
-        )
+            {"state": "window_open"},
+        ):
+            await log_event(
+                session,
+                EventType.WINDOW_STATE,
+                subscription_id=subscription.id,
+                payload={"state": "window_open", "checked_at": now.isoformat()},
+                commit=False,
+            )
 
         matching_value: QueueValue | None = None
         if snapshot.parse_ok:
@@ -78,21 +85,33 @@ async def process_subscriptions_for_snapshot(
 
         result = evaluate_subscription(subscription, matching_value, now)
 
-        await log_event(
+        rule_payload = {
+            "snapshot_id": snapshot.id,
+            "snapshot_parse_ok": snapshot.parse_ok,
+            "threshold": subscription.threshold,
+            "numeric_value": result.numeric_value,
+            "raw_value": result.raw_value,
+            "matched": result.matched,
+            "reason": result.reason,
+        }
+        if not await _same_as_last_event(
             session,
+            subscription.id,
             EventType.RULE_CHECK,
-            subscription_id=subscription.id,
-            payload={
-                "snapshot_id": snapshot.id,
-                "snapshot_parse_ok": snapshot.parse_ok,
-                "threshold": subscription.threshold,
+            {
                 "numeric_value": result.numeric_value,
                 "raw_value": result.raw_value,
                 "matched": result.matched,
                 "reason": result.reason,
             },
-            commit=False,
-        )
+        ):
+            await log_event(
+                session,
+                EventType.RULE_CHECK,
+                subscription_id=subscription.id,
+                payload=rule_payload,
+                commit=False,
+            )
 
         if result.matched:
             user = await session.get(User, subscription.user_id)
@@ -120,3 +139,29 @@ async def process_subscriptions_for_snapshot(
                     await session.flush()
 
     await session.commit()
+
+
+async def _same_as_last_event(
+    session: AsyncSession,
+    subscription_id: int,
+    event_type: EventType,
+    expected: dict,
+) -> bool:
+    """True when the latest event of this type already recorded the same facts.
+
+    Repeated 5-minute checks then stay out of event_log until the queue number
+    or the decision changes.
+    """
+    result = await session.execute(
+        select(EventLog)
+        .where(
+            EventLog.subscription_id == subscription_id,
+            EventLog.event_type == event_type,
+        )
+        .order_by(EventLog.created_at.desc())
+        .limit(1)
+    )
+    last = result.scalar_one_or_none()
+    if last is None or not last.payload:
+        return False
+    return all(last.payload.get(key) == value for key, value in expected.items())

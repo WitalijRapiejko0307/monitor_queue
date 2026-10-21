@@ -97,7 +97,7 @@ async def cmd_force_fetch(message: Message, session: AsyncSession, bot: Bot) -> 
     from app.domain.snapshot_service import fetch_and_store_snapshot
     from app.domain.subscription_processor import process_subscriptions_for_snapshot
 
-    await message.answer("Запускаю внеочередной опрос ГПК...")
+    await message.answer("Запускаю внеочередное чтение зон ожидания...")
     try:
         snapshot = await fetch_and_store_snapshot(session)
 
