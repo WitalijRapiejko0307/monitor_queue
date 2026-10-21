@@ -29,6 +29,18 @@ class Base(DeclarativeBase):
     pass
 
 
+def _pg_enum(enum_cls: type[enum.Enum], pg_name: str) -> Enum:
+    """Store enum values ('car'), not member names ('CAR'). Postgres types were
+    created with the lowercase values from the migration.
+    """
+    return Enum(
+        enum_cls,
+        name=pg_name,
+        values_callable=lambda members: [member.value for member in members],
+        native_enum=True,
+    )
+
+
 class Direction(str, enum.Enum):
     EXIT_BY = "exit_by"  # выезд из РБ
     ENTRY_BY = "entry_by"  # въезд в РБ
@@ -105,8 +117,8 @@ class QueueValue(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     snapshot_id: Mapped[int] = mapped_column(ForeignKey("queue_snapshots.id"), index=True)
     crossing_point_id: Mapped[int] = mapped_column(ForeignKey("crossing_points.id"), index=True)
-    direction: Mapped[Direction] = mapped_column(Enum(Direction))
-    vehicle_type: Mapped[VehicleType] = mapped_column(Enum(VehicleType))
+    direction: Mapped[Direction] = mapped_column(_pg_enum(Direction, "direction"))
+    vehicle_type: Mapped[VehicleType] = mapped_column(_pg_enum(VehicleType, "vehicletype"))
     raw_value: Mapped[str] = mapped_column(String(32))
     numeric_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_electronic_queue_value: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -137,7 +149,7 @@ class Payment(Base):
     provider: Mapped[str] = mapped_column(String(64))
     amount_minor: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(8))
-    status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus))
+    status: Mapped[PaymentStatus] = mapped_column(_pg_enum(PaymentStatus, "paymentstatus"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -156,13 +168,17 @@ class Subscription(Base):
         ForeignKey("payments.id"), nullable=True, unique=True
     )
     crossing_point_id: Mapped[int] = mapped_column(ForeignKey("crossing_points.id"), index=True)
-    vehicle_type: Mapped[VehicleType] = mapped_column(Enum(VehicleType))
-    direction: Mapped[Direction] = mapped_column(Enum(Direction), default=Direction.EXIT_BY)
+    vehicle_type: Mapped[VehicleType] = mapped_column(_pg_enum(VehicleType, "vehicletype"))
+    direction: Mapped[Direction] = mapped_column(
+        _pg_enum(Direction, "direction"), default=Direction.EXIT_BY
+    )
     threshold: Mapped[int] = mapped_column(Integer, default=1)
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[SubscriptionStatus] = mapped_column(
-        Enum(SubscriptionStatus), default=SubscriptionStatus.PENDING_PAYMENT, index=True
+        _pg_enum(SubscriptionStatus, "subscriptionstatus"),
+        default=SubscriptionStatus.PENDING_PAYMENT,
+        index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -182,7 +198,7 @@ class EventLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
-    event_type: Mapped[EventType] = mapped_column(Enum(EventType), index=True)
+    event_type: Mapped[EventType] = mapped_column(_pg_enum(EventType, "eventtype"), index=True)
     subscription_id: Mapped[int | None] = mapped_column(
         ForeignKey("subscriptions.id"), nullable=True, index=True
     )

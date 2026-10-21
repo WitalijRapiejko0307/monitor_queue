@@ -9,7 +9,9 @@ flips to ACTIVE after a successful Telegram payment (see payments.py).
 from __future__ import annotations
 
 import re
+import logging
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -37,6 +39,7 @@ from app.db.models import (
 from app.logging.events import log_event
 
 router = Router(name="wizard")
+logger = logging.getLogger(__name__)
 
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
 
@@ -100,14 +103,20 @@ def _confirm_keyboard() -> InlineKeyboardMarkup:
 async def cmd_start(message: Message, state: FSMContext, session: AsyncSession) -> None:
     await state.clear()
     await _get_or_create_user(session, message.from_user.id)
-    await message.answer(
+    intro = (
         "Этот бот присылает одно сообщение, когда на выбранном пункте пропуска "
         "собирается очередь — чтобы вы успели зарегистрироваться в зону ожидания "
         "электронной очереди перед выездом.\n\n"
-        "Услуга платная, разовая: одна оплата = одна ночь наблюдения за одним "
-        "пунктом и типом транспорта.\n\n"
-        "Команда /watch — купить наблюдение."
     )
+    if settings.payments_enabled:
+        intro += (
+            "Услуга платная, разовая: одна оплата = одна ночь наблюдения за одним "
+            "пунктом и типом транспорта.\n\n"
+            "Команда /watch — купить наблюдение."
+        )
+    else:
+        intro += "Команда /watch — начать наблюдение."
+    await message.answer(intro)
 
 
 @router.message(Command("watch"))
@@ -168,7 +177,7 @@ async def on_departure_time_entered(message: Message, state: FSMContext) -> None
         await message.answer("Похоже, время указано неверно. Формат ЧЧ:ММ, например 05:00.")
         return
 
-    now = datetime.now()
+    now = datetime.now(ZoneInfo(settings.timezone))
     candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if candidate <= now:
         candidate += timedelta(days=1)
@@ -176,15 +185,13 @@ async def on_departure_time_entered(message: Message, state: FSMContext) -> None
     await state.update_data(window_end=candidate.isoformat())
     await state.set_state("choosing_threshold")
     await message.answer(
-        "С какого количества машин писать? Если выбрать «1» — напишу, как только "
-        "очередь появится.",
+        "С какого количества машин писать? Нажмите кнопку или отправьте своё число "
+        "сообщением. Если выбрать 1 — напишу, как только очередь появится.",
         reply_markup=_threshold_keyboard(),
     )
 
 
-@router.callback_query(F.data.startswith("threshold:"))
-async def on_threshold_chosen(callback, state: FSMContext) -> None:
-    threshold = int(callback.data.split(":", 1)[1])
+async def _show_confirmation(message: Message, state: FSMContext, threshold: int) -> None:
     await state.update_data(threshold=threshold)
     data = await state.get_data()
 
@@ -210,14 +217,28 @@ async def on_threshold_chosen(callback, state: FSMContext) -> None:
             "\nОплата разовая. Если очередь не соберётся до указанного времени — "
             "услуга считается оказанной (бот следил по данным ГПК), возврат не производится."
         )
-    else:
-        summary_lines.append(
-            "\nСервис работает в тестовом режиме без оплаты. Наблюдение начнётся "
-            "сразу после подтверждения."
-        )
+    await message.answer("\n".join(summary_lines), reply_markup=_confirm_keyboard())
 
-    await callback.message.edit_text("\n".join(summary_lines), reply_markup=_confirm_keyboard())
+
+@router.callback_query(F.data.startswith("threshold:"))
+async def on_threshold_chosen(callback, state: FSMContext) -> None:
+    if await state.get_state() != "choosing_threshold":
+        await callback.answer("Сначала выберите время выезда командой /watch.", show_alert=True)
+        return
+    threshold = int(callback.data.split(":", 1)[1])
+    await _show_confirmation(callback.message, state, threshold)
     await callback.answer()
+
+
+@router.message(F.text.regexp(r"^\d{1,4}$"))
+async def on_threshold_typed(message: Message, state: FSMContext) -> None:
+    if await state.get_state() != "choosing_threshold":
+        return
+    threshold = int(message.text.strip())
+    if threshold < 1:
+        await message.answer("Нужно число от 1. Отправьте количество машин или нажмите кнопку.")
+        return
+    await _show_confirmation(message, state, threshold)
 
 
 @router.callback_query(F.data == "confirm:cancel")
@@ -229,13 +250,19 @@ async def on_confirm_cancel(callback, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "confirm:pay")
 async def on_confirm_pay(callback, state: FSMContext, session: AsyncSession) -> None:
+    await callback.answer("Запускаю наблюдение")
     data = await state.get_data()
 
-    if not settings.payments_enabled:
-        await _activate_subscription_without_payment(callback, state, session, data)
-        return
-
-    await _start_payment_flow(callback, state, session, data)
+    try:
+        if not settings.payments_enabled:
+            await _activate_subscription_without_payment(callback, state, session, data)
+            return
+        await _start_payment_flow(callback, state, session, data)
+    except Exception:
+        logger.exception("Failed to start a watch for telegram_id=%s", callback.from_user.id)
+        await callback.message.answer(
+            "Не получилось запустить наблюдение. Нажмите /watch и попробуйте ещё раз."
+        )
 
 
 async def _activate_subscription_without_payment(
@@ -255,7 +282,7 @@ async def _activate_subscription_without_payment(
         crossing_point_id=data["point_id"],
         vehicle_type=vehicle_type,
         threshold=data["threshold"],
-        window_start=datetime.now(),
+        window_start=datetime.now(ZoneInfo(settings.timezone)),
         window_end=datetime.fromisoformat(data["window_end"]),
         status=SubscriptionStatus.ACTIVE,
     )
@@ -280,11 +307,11 @@ async def _activate_subscription_without_payment(
 
     await state.clear()
     await callback.message.edit_text(
-        f"Наблюдение запущено (без оплаты, тестовый режим).\n"
+        f"Наблюдение запущено.\n"
         f"Слежу за очередью до {subscription.window_end.strftime('%d.%m %H:%M')}.\n"
-        f"Проверка по графику ГПК, раз в 2 часа. Напишу, как только условие выполнится."
+        f"Проверка по графику ГПК, раз в 2 часа. Напишу, как только машин станет "
+        f"не меньше {subscription.threshold}."
     )
-    await callback.answer()
 
 
 async def _start_payment_flow(
@@ -310,7 +337,7 @@ async def _start_payment_flow(
         crossing_point_id=data["point_id"],
         vehicle_type=vehicle_type,
         threshold=data["threshold"],
-        window_start=datetime.now(),
+        window_start=datetime.now(ZoneInfo(settings.timezone)),
         window_end=datetime.fromisoformat(data["window_end"]),
         status=SubscriptionStatus.PENDING_PAYMENT,
     )
