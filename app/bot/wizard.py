@@ -104,9 +104,10 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession) 
     await state.clear()
     await _get_or_create_user(session, message.from_user.id)
     intro = (
-        "Этот бот присылает одно сообщение, когда на выбранном пункте пропуска "
-        "собирается очередь — чтобы вы успели зарегистрироваться в зону ожидания "
-        "электронной очереди перед выездом.\n\n"
+        "Этот бот пишет, когда на выбранном пункте пропуска собирается очередь, "
+        "чтобы вы успели зарегистрироваться в зону ожидания. "
+        "Пока не нажмёте «Принято», напоминание приходит каждые 5 минут, "
+        "но не дольше времени выезда.\n\n"
     )
     if settings.payments_enabled:
         intro += (
@@ -239,6 +240,33 @@ async def on_threshold_typed(message: Message, state: FSMContext) -> None:
         await message.answer("Нужно число от 1. Отправьте количество машин или нажмите кнопку.")
         return
     await _show_confirmation(message, state, threshold)
+
+
+@router.callback_query(F.data.startswith("ack:"))
+async def on_alert_accepted(callback, session: AsyncSession) -> None:
+    subscription_id = int(callback.data.split(":", 1)[1])
+    subscription = await session.get(Subscription, subscription_id)
+    user = await _get_or_create_user(session, callback.from_user.id)
+    if subscription is None or subscription.user_id != user.id:
+        await callback.answer("Это наблюдение вам не принадлежит.", show_alert=True)
+        return
+    if subscription.status != SubscriptionStatus.ALERTING:
+        await callback.answer("Напоминания уже остановлены.")
+        return
+
+    subscription.status = SubscriptionStatus.FULFILLED
+    await log_event(
+        session,
+        EventType.NOTIFICATION_ACKNOWLEDGED,
+        subscription_id=subscription.id,
+        telegram_id=user.telegram_id,
+        payload={},
+        commit=False,
+    )
+    await session.commit()
+    if callback.message is not None:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer("Принято. Напоминания остановлены.")
 
 
 @router.callback_query(F.data == "confirm:cancel")

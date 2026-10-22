@@ -40,7 +40,9 @@ async def process_subscriptions_for_snapshot(
     now = datetime.now(timezone.utc)
 
     active_result = await session.execute(
-        select(Subscription).where(Subscription.status == SubscriptionStatus.ACTIVE)
+        select(Subscription).where(
+            Subscription.status.in_((SubscriptionStatus.ACTIVE, SubscriptionStatus.ALERTING))
+        )
     )
     active_subscriptions = active_result.scalars().all()
 
@@ -53,6 +55,15 @@ async def process_subscriptions_for_snapshot(
                 payload={"state": "window_expired", "checked_at": now.isoformat()},
                 commit=False,
             )
+            if subscription.status == SubscriptionStatus.ALERTING:
+                user = await session.get(User, subscription.user_id)
+                if user is not None:
+                    await send_notification(
+                        telegram_id=user.telegram_id,
+                        subscription=subscription,
+                        result=evaluate_subscription(subscription, None, now),
+                        snapshot=snapshot,
+                    )
             subscription.status = SubscriptionStatus.EXPIRED
             await session.flush()
             continue
@@ -113,7 +124,8 @@ async def process_subscriptions_for_snapshot(
                 commit=False,
             )
 
-        if result.matched:
+        should_notify = result.matched or subscription.status == SubscriptionStatus.ALERTING
+        if should_notify:
             user = await session.get(User, subscription.user_id)
             if user is not None:
                 sent_ok, send_error = await send_notification(
@@ -131,11 +143,12 @@ async def process_subscriptions_for_snapshot(
                         "numeric_value": result.numeric_value,
                         "raw_value": result.raw_value,
                         "error": send_error,
+                        "reminder": subscription.status == SubscriptionStatus.ALERTING,
                     },
                     commit=False,
                 )
-                if sent_ok:
-                    subscription.status = SubscriptionStatus.FULFILLED
+                if sent_ok and subscription.status == SubscriptionStatus.ACTIVE:
+                    subscription.status = SubscriptionStatus.ALERTING
                     await session.flush()
 
     await session.commit()

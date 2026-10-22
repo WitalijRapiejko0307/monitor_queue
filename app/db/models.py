@@ -62,6 +62,7 @@ class PaymentStatus(str, enum.Enum):
 class SubscriptionStatus(str, enum.Enum):
     PENDING_PAYMENT = "pending_payment"
     ACTIVE = "active"
+    ALERTING = "alerting"
     FULFILLED = "fulfilled"
     EXPIRED = "expired"
     CANCELLED = "cancelled"
@@ -82,6 +83,7 @@ class EventType(str, enum.Enum):
     WINDOW_STATE = "window_state"
     NOTIFICATION_SENT = "notification_sent"
     NOTIFICATION_FAILED = "notification_failed"
+    NOTIFICATION_ACKNOWLEDGED = "notification_acknowledged"
 
 
 class CrossingPoint(Base):

@@ -69,7 +69,7 @@ async def cmd_status(message: Message, session: AsyncSession) -> None:
 
     active_count_result = await session.execute(
         select(func.count(Subscription.id)).where(
-            Subscription.status == SubscriptionStatus.ACTIVE
+            Subscription.status.in_((SubscriptionStatus.ACTIVE, SubscriptionStatus.ALERTING))
         )
     )
     active_count = active_count_result.scalar_one()
