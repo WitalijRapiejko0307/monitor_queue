@@ -10,9 +10,11 @@ import logging
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import func, select
 
 from app.bot.notifications import send_queue_notification
 from app.config import settings
+from app.db.models import Subscription, SubscriptionStatus
 from app.db.session import get_session
 from app.domain.snapshot_service import fetch_and_store_snapshot
 from app.domain.subscription_processor import process_subscriptions_for_snapshot
@@ -22,6 +24,16 @@ logger = logging.getLogger(__name__)
 
 async def run_fetch_and_evaluate(bot: Bot) -> None:
     async with get_session() as session:
+        active_count_result = await session.execute(
+            select(func.count(Subscription.id)).where(
+                Subscription.status.in_((SubscriptionStatus.ACTIVE, SubscriptionStatus.ALERTING))
+            )
+        )
+        active_count = active_count_result.scalar_one()
+        if active_count == 0:
+            logger.info("Опрос пропущен: активных наблюдений нет")
+            return
+
         snapshot = await fetch_and_store_snapshot(session)
         logger.info(
             "Snapshot #%s fetched: parse_ok=%s source_time=%s",
