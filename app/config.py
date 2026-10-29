@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     )
     fetch_interval_minutes: int = Field(default=5, alias="FETCH_INTERVAL_MINUTES")
 
+    developer_contact_url: str = Field(
+        default="https://t.me/vitali_rapeika",
+        alias="DEVELOPER_CONTACT_URL",
+    )
+    donate_phone: str = Field(default="+375298043522", alias="DONATE_PHONE")
+
     payment_provider_token: str = Field(default="", alias="PAYMENT_PROVIDER_TOKEN")
     payment_currency: str = Field(default="BYN", alias="PAYMENT_CURRENCY")
     price_car_minor: int = Field(default=500, alias="PRICE_CAR_MINOR")

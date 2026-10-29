@@ -87,6 +87,30 @@ def _threshold_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def _developer_keyboard() -> InlineKeyboardMarkup | None:
+    if not settings.developer_contact_url:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Написать разработчику",
+                    url=settings.developer_contact_url,
+                )
+            ]
+        ]
+    )
+
+
+def _donate_details() -> str:
+    if not settings.donate_phone:
+        return ""
+    return (
+        "Пополнить счёт в Альфа-Банке по номеру телефона:\n"
+        f"<code>{settings.donate_phone}</code>"
+    )
+
+
 def _confirm_keyboard() -> InlineKeyboardMarkup:
     confirm_label = "Оплатить" if settings.payments_enabled else "Начать наблюдение"
     return InlineKeyboardMarkup(
@@ -118,6 +142,33 @@ async def cmd_start(message: Message, state: FSMContext, session: AsyncSession) 
     else:
         intro += "Команда /watch — начать наблюдение."
     await message.answer(intro)
+
+
+@router.message(Command("support"))
+async def cmd_support(message: Message) -> None:
+    """Developer contact first. Donation details only while payments are off."""
+    text = "Написать разработчику можно по кнопке ниже — если что-то работает не так или есть вопрос."
+    if not settings.payments_enabled:
+        donate = _donate_details()
+        if donate:
+            text += f"\n\nЕсли бот помогает, можно поддержать разработку.\n\n{donate}"
+    await message.answer(text, reply_markup=_developer_keyboard())
+
+
+@router.message(Command("donat"))
+async def cmd_donat(message: Message) -> None:
+    """Voluntary support. Hidden once the bot is paid."""
+    if settings.payments_enabled:
+        await message.answer(
+            "Бот работает как платная услуга, отдельная поддержка не нужна. "
+            "Вопросы — команда /support."
+        )
+        return
+    donate = _donate_details()
+    text = "Если бот приносит пользу, можно поддержать данную разработку."
+    if donate:
+        text += f"\n\n{donate}"
+    await message.answer(text)
 
 
 @router.message(Command("watch"))
