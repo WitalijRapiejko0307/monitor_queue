@@ -107,7 +107,9 @@ def _donate_details() -> str:
         return ""
     return (
         "Пополнить счёт в Альфа-Банке по номеру телефона:\n"
-        f"<code>{settings.donate_phone}</code>"
+        f"<code>{settings.donate_phone}</code>\n\n"
+        "Оплата ЕРИП → Банковские, финансовые услуги → Банки, НКФО → "
+        "Альфа-банк → Пополнение счета"
     )
 
 
